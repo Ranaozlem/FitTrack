@@ -33,20 +33,98 @@ function App() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
-  async function apiRequest(url, options = {}) {
-    const response = await fetch(url, {
-      headers: { "Content-Type": "application/json" },
-      ...options,
-    });
+ 
+async function apiRequest(url, options = {}) {
+  // Netlify'da LocalStorage kullan
+  if (import.meta.env.PROD) {
+    const KEY = "fittrack_tasks";
 
-    const data = await response.json();
+    const tasks = JSON.parse(
+      localStorage.getItem(KEY) || "[]"
+    );
 
-    if (!response.ok) {
-      throw new Error(data.message || "İşlem başarısız.");
+    const method = (options.method || "GET").toUpperCase();
+    const id = Number(url.split("/").pop());
+
+    const save = (data) => {
+      localStorage.setItem(KEY, JSON.stringify(data));
+    };
+
+    // Listeleme ve detay
+    if (method === "GET") {
+      if (url.endsWith("/tasks")) {
+        return tasks;
+      }
+
+      const task = tasks.find((t) => t.id === id);
+      if (!task) throw new Error("Görev bulunamadı.");
+      return task;
     }
 
-    return data;
+    // Yeni görev
+    if (method === "POST") {
+      const body = JSON.parse(options.body);
+
+      if (!body.title?.trim()) {
+        throw new Error("Görev adı zorunludur.");
+      }
+
+      const task = {
+        ...body,
+        id: Math.max(0, ...tasks.map((t) => t.id)) + 1,
+        status: "pending",
+        createdAt: new Date().toISOString(),
+      };
+
+      save([...tasks, task]);
+      return task;
+    }
+
+    // Güncelleme
+    if (method === "PUT") {
+      const index = tasks.findIndex((t) => t.id === id);
+      if (index === -1) throw new Error("Görev bulunamadı.");
+
+      const body = JSON.parse(options.body);
+
+      tasks[index] = {
+        ...tasks[index],
+        ...body,
+        id,
+      };
+
+      save(tasks);
+      return tasks[index];
+    }
+
+    // Silme
+    if (method === "DELETE") {
+      const index = tasks.findIndex((t) => t.id === id);
+      if (index === -1) throw new Error("Görev bulunamadı.");
+
+      tasks.splice(index, 1);
+      save(tasks);
+
+      return { message: "Görev silindi." };
+    }
+
+    throw new Error("Desteklenmeyen işlem.");
   }
+
+  // Bilgisayarda gerçek Node.js Backend'e bağlan
+  const response = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "İşlem başarısız.");
+  }
+
+  return data;
+}
 
   async function loadTasks() {
     try {
